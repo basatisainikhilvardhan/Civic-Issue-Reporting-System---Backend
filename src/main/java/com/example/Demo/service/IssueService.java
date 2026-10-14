@@ -18,8 +18,14 @@ import com.example.Demo.dto.StatusUpdateResponse;
 import com.example.Demo.dto.UpdateIssueRequest;
 import com.example.Demo.dto.UpdateStatusRequest;
 import com.example.Demo.exception.ResourceNotFoundException;
+import java.awt.image.BufferedImage;
+import java.io.InputStream;
 import java.time.LocalDateTime;
+import java.util.Iterator;
 import java.util.List;
+import javax.imageio.ImageIO;
+import javax.imageio.ImageReader;
+import javax.imageio.stream.ImageInputStream;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -335,6 +341,39 @@ public class IssueService {
             } else {
                 throw new IllegalArgumentException("Unsupported image extension. Allowed extensions: .jpg, .jpeg, .png");
             }
+        }
+
+        // Verify genuine, decodable image content and enforce dimension limits
+        try (InputStream is = file.getInputStream();
+             ImageInputStream iis = ImageIO.createImageInputStream(is)) {
+            if (iis == null) {
+                throw new IllegalArgumentException("Invalid or corrupted image stream.");
+            }
+            Iterator<ImageReader> readers = ImageIO.getImageReaders(iis);
+            if (!readers.hasNext()) {
+                throw new IllegalArgumentException("Unsupported or invalid image content. File is not a valid JPEG or PNG image.");
+            }
+            ImageReader reader = readers.next();
+            try {
+                reader.setInput(iis, false, false);
+                int width = reader.getWidth(0);
+                int height = reader.getHeight(0);
+                if (width <= 0 || height <= 0) {
+                    throw new IllegalArgumentException("Invalid image dimensions.");
+                }
+                int maxDimension = 8000;
+                if (width > maxDimension || height > maxDimension) {
+                    throw new IllegalArgumentException("Image dimensions exceed maximum allowed limit of " + maxDimension + "x" + maxDimension + " pixels.");
+                }
+                BufferedImage bufferedImage = reader.read(0);
+                if (bufferedImage == null) {
+                    throw new IllegalArgumentException("Failed to decode image data.");
+                }
+            } finally {
+                reader.dispose();
+            }
+        } catch (java.io.IOException e) {
+            throw new IllegalArgumentException("Invalid or corrupted image content: " + e.getMessage());
         }
 
         java.io.File uploadDir = new java.io.File("uploads");
